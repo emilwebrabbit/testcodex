@@ -5,11 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Motorcycle Racing</title>
 <style>
-  body { margin: 0; overflow: hidden; }
-  #info { position: absolute; top: 10px; left: 10px; color: white; z-index: 1; }
+  body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+  #hud { position: absolute; top: 10px; left: 10px; color: white; z-index: 1; line-height: 1.5; }
+  #info { position: absolute; bottom: 10px; left: 10px; color: white; z-index: 1; }
 </style>
 </head>
 <body>
+<div id="hud">
+  <div id="laps">Laps: 0/3</div>
+  <div id="timer">Time: 0.0s</div>
+</div>
 <div id="info">Use arrow keys to control the bike</div>
 <script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
 <script>
@@ -51,6 +56,15 @@
 
   scene.add(wallNorth, wallSouth, wallWest, wallEast);
 
+  // Start/finish line
+  const startLineZ = -trackHeight/2 + 2;
+  const lineGeo = new THREE.PlaneGeometry(trackWidth, 1);
+  const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+  const startLine = new THREE.Mesh(lineGeo, lineMat);
+  startLine.rotation.x = -Math.PI / 2;
+  startLine.position.set(0, 0.01, startLineZ);
+  scene.add(startLine);
+
   // Simple lighting
   const ambient = new THREE.AmbientLight(0x404040);
   scene.add(ambient);
@@ -68,6 +82,16 @@
   // Camera offset relative to bike
   const cameraOffset = new THREE.Vector3(0, 8, -12);
 
+  // HUD elements
+  const lapsEl = document.getElementById('laps');
+  const timerEl = document.getElementById('timer');
+  const infoEl = document.getElementById('info');
+
+  let laps = 0;
+  const totalLaps = 3;
+  let previousZ = bike.position.z;
+  const startTime = Date.now();
+
   let velocity = 0;
   let direction = 0; // in radians
   let speed = 0;
@@ -83,6 +107,10 @@
   function animate() {
     requestAnimationFrame(animate);
 
+    // Update HUD
+    const elapsed = (Date.now() - startTime) / 1000;
+    timerEl.textContent = `Time: ${elapsed.toFixed(1)}s`;
+
     if (keys.ArrowUp) speed += acceleration;
     if (keys.ArrowDown) speed -= acceleration;
     if (keys.ArrowLeft) direction += 0.03 * (speed >= 0 ? 1 : -1);
@@ -94,6 +122,16 @@
     bike.rotation.y = direction;
     bike.position.x += Math.sin(direction) * speed;
     bike.position.z += Math.cos(direction) * speed;
+
+    // Lap counting
+    if (previousZ > startLineZ && bike.position.z <= startLineZ && Math.abs(bike.position.x) < trackWidth / 4) {
+      laps++;
+      lapsEl.textContent = `Laps: ${laps}/${totalLaps}`;
+      if (laps >= totalLaps) {
+        infoEl.textContent = `Finished! Total time: ${elapsed.toFixed(1)}s`;
+      }
+    }
+    previousZ = bike.position.z;
 
     // Keep bike within track boundaries
     const halfWidth = trackWidth/2 - 2;
