@@ -3,156 +3,117 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Motorcycle Racing</title>
+<title>2D Racing</title>
 <style>
-  body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
-  #hud { position: absolute; top: 10px; left: 10px; color: white; z-index: 1; line-height: 1.5; }
-  #info { position: absolute; bottom: 10px; left: 10px; color: white; z-index: 1; }
+  body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; background:#222; color:white; }
+  #hud { position:absolute; top:10px; left:10px; z-index:1; line-height:1.5; }
+  canvas { display:block; margin:0; }
 </style>
 </head>
 <body>
 <div id="hud">
   <div id="laps">Laps: 0/3</div>
   <div id="timer">Time: 0.0s</div>
+  <div id="info">Use arrow keys to drive</div>
 </div>
-<div id="info">Use arrow keys to control the bike</div>
-<script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
+<canvas id="game"></canvas>
 <script>
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x87ceeb);
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
 
-  const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  document.body.appendChild(renderer.domElement);
+const trackWidth = 800;
+const trackHeight = 500;
+const wallThickness = 20;
+const startLineY = wallThickness + 20;
 
-  // Ground
-  const groundGeo = new THREE.PlaneGeometry(200, 200);
-  const groundMat = new THREE.MeshPhongMaterial({ color: 0x228B22 });
-  const ground = new THREE.Mesh(groundGeo, groundMat);
-  ground.rotation.x = -Math.PI / 2;
-  scene.add(ground);
+const car = { x: trackWidth/2, y: trackHeight-60, w:30, h:50, dir:0, speed:0 };
+const maxSpeed = 4;
+const accel = 0.2;
+const friction = 0.05;
 
-  // Track boundaries (simple rectangle)
-  const wallMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 });
-  const wallHeight = 2;
-  const wallThickness = 1;
-  const trackWidth = 100;
-  const trackHeight = 60;
+const keys = {};
+window.addEventListener('keydown', e => keys[e.code] = true);
+window.addEventListener('keyup', e => keys[e.code] = false);
 
-  const wallGeoHorizontal = new THREE.BoxGeometry(trackWidth, wallHeight, wallThickness);
-  const wallGeoVertical = new THREE.BoxGeometry(wallThickness, wallHeight, trackHeight + wallThickness*2);
+let laps = 0;
+const totalLaps = 3;
+let prevY = car.y;
+const startTime = Date.now();
 
-  const wallNorth = new THREE.Mesh(wallGeoHorizontal, wallMaterial);
-  const wallSouth = new THREE.Mesh(wallGeoHorizontal, wallMaterial);
-  const wallWest = new THREE.Mesh(wallGeoVertical, wallMaterial);
-  const wallEast = new THREE.Mesh(wallGeoVertical, wallMaterial);
+function update() {
+  const elapsed = (Date.now()-startTime)/1000;
+  document.getElementById('timer').textContent = `Time: ${elapsed.toFixed(1)}s`;
+  document.getElementById('laps').textContent = `Laps: ${laps}/${totalLaps}`;
 
-  wallNorth.position.set(0, wallHeight/2, -trackHeight/2);
-  wallSouth.position.set(0, wallHeight/2, trackHeight/2);
-  wallWest.position.set(-trackWidth/2, wallHeight/2, 0);
-  wallEast.position.set(trackWidth/2, wallHeight/2, 0);
+  if(keys.ArrowUp) car.speed += accel;
+  if(keys.ArrowDown) car.speed -= accel;
+  if(keys.ArrowLeft) car.dir -= 0.05*(car.speed>=0?1:-1);
+  if(keys.ArrowRight) car.dir += 0.05*(car.speed>=0?1:-1);
 
-  scene.add(wallNorth, wallSouth, wallWest, wallEast);
+  car.speed -= Math.sign(car.speed)*friction;
+  car.speed = Math.max(-maxSpeed, Math.min(maxSpeed, car.speed));
 
-  // Start/finish line
-  const startLineZ = -trackHeight/2 + 2;
-  const lineGeo = new THREE.PlaneGeometry(trackWidth, 1);
-  const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
-  const startLine = new THREE.Mesh(lineGeo, lineMat);
-  startLine.rotation.x = -Math.PI / 2;
-  startLine.position.set(0, 0.01, startLineZ);
-  scene.add(startLine);
+  car.x += Math.sin(car.dir)*car.speed;
+  car.y -= Math.cos(car.dir)*car.speed;
 
-  // Simple lighting
-  const ambient = new THREE.AmbientLight(0x404040);
-  scene.add(ambient);
-  const light = new THREE.DirectionalLight(0xffffff, 1);
-  light.position.set(50, 50, 50).normalize();
-  scene.add(light);
+  // boundaries
+  const minX = wallThickness + car.w/2;
+  const maxX = trackWidth - wallThickness - car.w/2;
+  const minY = wallThickness + car.h/2;
+  const maxY = trackHeight - wallThickness - car.h/2;
+  car.x = Math.max(minX, Math.min(maxX, car.x));
+  car.y = Math.max(minY, Math.min(maxY, car.y));
 
-  // Motorcycle (represented as a box)
-  const bikeGeo = new THREE.BoxGeometry(2, 1, 4);
-  const bikeMat = new THREE.MeshPhongMaterial({ color: 0x0000ff });
-  const bike = new THREE.Mesh(bikeGeo, bikeMat);
-  bike.position.y = 0.5;
-  scene.add(bike);
-
-  // Camera offset relative to bike
-  const cameraOffset = new THREE.Vector3(0, 8, -12);
-
-  // HUD elements
-  const lapsEl = document.getElementById('laps');
-  const timerEl = document.getElementById('timer');
-  const infoEl = document.getElementById('info');
-
-  let laps = 0;
-  const totalLaps = 3;
-  let previousZ = bike.position.z;
-  const startTime = Date.now();
-
-  let velocity = 0;
-  let direction = 0; // in radians
-  let speed = 0;
-  const maxSpeed = 2;
-  const acceleration = 0.05;
-  const friction = 0.02;
-
-  const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
-
-  window.addEventListener('keydown', (e) => { if (e.code in keys) keys[e.code] = true; });
-  window.addEventListener('keyup', (e) => { if (e.code in keys) keys[e.code] = false; });
-
-  function animate() {
-    requestAnimationFrame(animate);
-
-    // Update HUD
-    const elapsed = (Date.now() - startTime) / 1000;
-    timerEl.textContent = `Time: ${elapsed.toFixed(1)}s`;
-
-    if (keys.ArrowUp) speed += acceleration;
-    if (keys.ArrowDown) speed -= acceleration;
-    if (keys.ArrowLeft) direction += 0.03 * (speed >= 0 ? 1 : -1);
-    if (keys.ArrowRight) direction -= 0.03 * (speed >= 0 ? 1 : -1);
-
-    speed -= Math.sign(speed) * friction;
-    speed = Math.max(-maxSpeed, Math.min(maxSpeed, speed));
-
-    bike.rotation.y = direction;
-    bike.position.x += Math.sin(direction) * speed;
-    bike.position.z += Math.cos(direction) * speed;
-
-    // Lap counting
-    if (previousZ > startLineZ && bike.position.z <= startLineZ && Math.abs(bike.position.x) < trackWidth / 4) {
-      laps++;
-      lapsEl.textContent = `Laps: ${laps}/${totalLaps}`;
-      if (laps >= totalLaps) {
-        infoEl.textContent = `Finished! Total time: ${elapsed.toFixed(1)}s`;
-      }
+  // lap
+  if(prevY < startLineY && car.y >= startLineY && Math.abs(car.x-trackWidth/2) < trackWidth/4) {
+    laps++;
+    if(laps>=totalLaps){
+      document.getElementById('info').textContent = `Finished! Total time: ${elapsed.toFixed(1)}s`;
     }
-    previousZ = bike.position.z;
-
-    // Keep bike within track boundaries
-    const halfWidth = trackWidth/2 - 2;
-    const halfHeight = trackHeight/2 - 2;
-    bike.position.x = Math.max(-halfWidth, Math.min(halfWidth, bike.position.x));
-    bike.position.z = Math.max(-halfHeight, Math.min(halfHeight, bike.position.z));
-
-    const camPos = bike.position.clone().add(new THREE.Vector3().copy(cameraOffset).applyAxisAngle(new THREE.Vector3(0,1,0), direction));
-    camera.position.copy(camPos);
-    camera.lookAt(bike.position);
-
-    renderer.render(scene, camera);
   }
+  prevY = car.y;
+}
 
-  animate();
+function draw() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  });
+  ctx.save();
+  ctx.translate((canvas.width-trackWidth)/2, (canvas.height-trackHeight)/2);
+
+  // track
+  ctx.fillStyle = '#555';
+  ctx.fillRect(0,0,trackWidth,trackHeight);
+  ctx.fillStyle = '#228B22';
+  ctx.fillRect(0,0,trackWidth,wallThickness);
+  ctx.fillRect(0,trackHeight-wallThickness,trackWidth,wallThickness);
+  ctx.fillRect(0,0,wallThickness,trackHeight);
+  ctx.fillRect(trackWidth-wallThickness,0,wallThickness,trackHeight);
+
+  // start line
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(wallThickness, startLineY-2, trackWidth-2*wallThickness, 4);
+
+  // car
+  ctx.translate(car.x, car.y);
+  ctx.rotate(car.dir);
+  ctx.fillStyle = '#00f';
+  ctx.fillRect(-car.w/2,-car.h/2,car.w,car.h);
+  ctx.restore();
+}
+
+function loop(){
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
 </script>
 </body>
 </html>
